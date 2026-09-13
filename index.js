@@ -8,25 +8,27 @@ const numeral = require('numeral');
 
 const gistId = process.env.GIST_ID;
 const githubToken = process.env.GH_TOKEN;
-const countAllCommits = process.env.ALL_COMMITS.toString() === 'true';
-const kFormat = process.env.K_FORMAT.toString() === 'true';
+const countAllCommits = process.env.ALL_COMMITS === 'true';
+const kFormat = process.env.K_FORMAT === 'true';
 
 async function main() {
     if (!githubToken) {
         throw new Error('GH_TOKEN is not defined');
     }
+
     let stats;
     try {
         stats = await getStats();
         console.info('Successfully fetched statistics from GitHub');
         console.info(JSON.stringify(stats, null, 2));
     } catch (e) {
-        throw new Error(`cannot retrieve statistics: ${e.message}`);
+        throw new Error('cannot retrieve statistics: ' + e.message);
     }
+
     try {
         await updateGist(stats);
     } catch (e) {
-        throw new Error(`cannot update gist: ${e.message}`);
+        throw new Error('cannot update gist: ' + e.message);
     }
 }
 
@@ -60,26 +62,22 @@ async function getStats() {
 
 async function updateGist(stats) {
     const humanize = (n) => (n >= 1000 ? numeral(n).format(kFormat ? '0.0a' : '0,0') : n);
+    const labelWidth = 20;
+    const rows = [
+        ['⭐', 'Total Stars', humanize(stats.totalStars)],
+        ['➕', countAllCommits ? 'Total Commits' : 'Past Year Commits', humanize(stats.totalCommits)],
+        ['🔀', 'Total PRs', humanize(stats.totalPRs)],
+        ['🚩', 'Total Issues', humanize(stats.totalIssues)],
+        ['📦', 'Contributed to', humanize(stats.contributedTo)],
+    ];
 
-    const gistContent =
-        [
-            ['⭐', `Total Stars`, humanize(stats.totalStars)],
-            ['➕', countAllCommits ? 'Total Commits' : 'Past Year Commits', humanize(stats.totalCommits)],
-            ['🔀', `Total PRs`, humanize(stats.totalPRs)],
-            ['🚩', `Total Issues`, humanize(stats.totalIssues)],
-            ['📦', `Contributed to`, humanize(stats.contributedTo)],
-        ]
-            .map((content) => {
-                let line = `${content[1]}:${content[2]}`;
-                line = line.replace(':', ':' + ' '.repeat(45 - line.length));
-                line = `${content[0]}    ${line}`;
-                return line;
-            })
-            .join('\n') + '\n';
+    const gistContent = rows
+        .map(([icon, label, value]) => icon + '  ' + (label + ':').padEnd(labelWidth) + value)
+        .join('\n') + '\n';
 
     const gist = await request('GET /gists/:gist_id', {
         gist_id: gistId,
-        headers: { authorization: `token ${githubToken}` },
+        headers: { authorization: 'token ' + githubToken },
     });
     const filename = Object.keys(gist.data.files)[0];
 
@@ -91,14 +89,14 @@ async function updateGist(stats) {
     return request('PATCH /gists/:gist_id', {
         files: {
             [filename]: {
-                filename: `${stats.name}'s GitHub Stats`,
+                filename: stats.name + "'s GitHub Stats",
                 content: gistContent,
             },
         },
         gist_id: gistId,
-        headers: { authorization: `token ${githubToken}` },
+        headers: { authorization: 'token ' + githubToken },
     }).then(() => {
-        console.info(`Updated Gist ${gistId} with the following content:\n${gistContent}`);
+        console.info('Updated Gist ' + gistId + ' with compact statistics');
     });
 }
 
